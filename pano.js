@@ -1,3 +1,19 @@
+function Class(base, constructor, methods) {
+    // Create a new object as this class prototype based on the base objects
+    // prototype. This is way, functions added to the new prototype won't be
+    // added to the base class prototype.
+    constructor.prototype = Object.create(base.prototype);
+
+    // Add methods to the prototype.
+    if(methods != undefined) {
+        for(var name in methods) {
+            constructor.prototype[name] = methods[name];
+        }
+    }
+
+    return constructor;
+}
+
 var FPS = 30;
 var DEG2RAD = Math.PI/180.0;
 // var widthToHeight = 4 / 3;
@@ -27,6 +43,8 @@ var img_buffer = null;
 var img = new Image();
 img.onload = imageLoaded;
 
+var renderer = null;
+
 function init_pano(canvasId, image){
   //get canvas and set up callbacks
   pano_canvas = document.getElementById(canvasId);
@@ -40,6 +58,8 @@ function init_pano(canvasId, image){
   window.addEventListener('orientationchange', resizeCanvas, false);
 
   setImage(image);
+  renderer = new WebGLRenderer(pano_canvas);
+  renderer.init();
 }
 
 function setImage(imageData) {
@@ -77,14 +97,19 @@ function imageLoaded(){
   var buffer_ctx = buffer.getContext("2d");
 
   //set buffer size
-  buffer.width = img.width;
-  buffer.height = img.height;
+  var tex_resolution = 2048;
+  buffer.width = tex_resolution;
+  buffer.height = tex_resolution;
 
   //draw image
-  buffer_ctx.drawImage(img, 0, 0);
+  var scale = tex_resolution / img.width;
+  buffer_ctx.drawImage(img,
+          0, (tex_resolution - img.height * scale) / 2,
+          tex_resolution, img.height * scale);
 
   //get pixels
-  source = buffer_ctx.getImageData(0, 0, buffer.width, buffer.height);
+  source = buffer_ctx.getImageData(0, 0, tex_resolution, tex_resolution);
+  renderer.setImage(source, img.height * scale);
 
   resizeCanvas();
 }
@@ -99,7 +124,6 @@ function mouseMove(e){
   if(mouseIsDown == true){
     cam_heading -= (e.clientX-mouseDownPosLastX);
     cam_pitch += 0.5*(e.clientY-mouseDownPosLastY);
-    cam_pitch = Math.min(120, Math.max(60, cam_pitch));
     mouseDownPosLastX = e.clientX;
     mouseDownPosLastY = e.clientY;
     draw();
@@ -113,7 +137,6 @@ function mouseUp(e){
 
 function mouseScroll(e){
   cam_fov+=e.wheelDelta/120;
-  cam_fov=Math.min(90,Math.max(30, cam_fov));
   draw();
 }
 
@@ -261,7 +284,7 @@ function renderPanorama(canvas){
     var theta_fac = src_height/Math.PI;
     var phi_fac = src_width*0.5/Math.PI
     var ratioUp = 2.0*Math.tan(cam_fov*DEG2RAD/2.0);
-    var ratioRight = ratioUp*1.;
+    var ratioRight = ratioUp*(16/9);
     var camDirX = Math.sin(cam_pitch*DEG2RAD)*Math.sin(cam_heading*DEG2RAD);
     var camDirY = Math.cos(cam_pitch*DEG2RAD);
     var camDirZ = Math.sin(cam_pitch*DEG2RAD)*Math.cos(cam_heading*DEG2RAD);
@@ -362,6 +385,128 @@ function renderPanorama(canvas){
   }
 }
 
+WebGLRenderer = Class(Object,
+    function WebGLRenderer(canvas) {
+        this.canvas = canvas;
+        this.gl = this.canvas.getContext('webkit-3d');
+    },
+    {
+        init: function(img) {
+            var vertex_shader = this.load_shader(this.gl.VERTEX_SHADER,
+                this.get_text('vertex_shader'));
+            var fragment_shader = this.load_shader(this.gl.FRAGMENT_SHADER,
+                this.get_text('fragment_shader'));
+            this.program = this.gl.createProgram();
+            this.gl.attachShader(this.program, vertex_shader);
+            this.gl.attachShader(this.program, fragment_shader);
+
+            this.gl.linkProgram(this.program);
+            if(!this.gl.getProgramParameter(this.program, this.gl.LINK_STATUS)) {
+                console.log(this.gl.getProgramInfoLog(program));
+            }
+
+            this.gl.useProgram(this.program);
+
+            this.attribs = {
+                vertex: this.gl.getAttribLocation(this.program, 'vertex'),
+                cam: this.gl.getAttribLocation(this.program, 'cam'),
+                texture: this.gl.getUniformLocation(this.program, 'texture_img'),
+                texture_size: this.gl.getUniformLocation(this.program, 'texture_size'),
+                panorama_height: this.gl.getUniformLocation(this.program, 'panorama_height'),
+                viewport_size: this.gl.getUniformLocation(this.program, 'viewport_size'),
+                cam_up: this.gl.getUniformLocation(this.program, 'cam_up'),
+                cam_right: this.gl.getUniformLocation(this.program, 'cam_right'),
+                cam_plane: this.gl.getUniformLocation(this.program, 'cam_plane'),
+            }
+
+            this.texture = this.gl.createTexture();
+            this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+            this.gl.texParameteri(this.gl.TEXTURE_2D,
+                    this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+            this.gl.texParameteri(this.gl.TEXTURE_2D,
+                    this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+            this.gl.uniform1i(this.attribs.texture, 0);
+
+            this.vertex_buffer = this.gl.createBuffer();
+            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertex_buffer);
+            this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array([
+                    -1, 1, 0,
+                    1, 1, 0,
+                    -1, -1, 0,
+                    1, -1, 0
+                     ]), this.gl.STATIC_DRAW);
+
+            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertex_buffer);
+            this.gl.enableVertexAttribArray(this.attribs.vertex);
+            this.gl.vertexAttribPointer(this.attribs.vertex, 3, this.gl.FLOAT,
+                    false, 3*4, 0*4);
+
+            this.gl.activeTexture(this.gl.TEXTURE0);
+        },
+        setImage: function(data, panorama_height) {
+            this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA,
+                   this.gl.UNSIGNED_BYTE, data);
+            this.gl.uniform1i(this.attribs.texture, 0);
+            this.gl.uniform2f(this.attribs.texture_size,
+                    data.width, data.height);
+            this.gl.uniform1f(this.attribs.panorama_height, panorama_height);
+            this.img_width = data.width;
+            this.img_height = data.height;
+        },
+        get_text: function(elem_id) {
+            var elem = document.getElementById(elem_id);
+            var source = '';
+            var child = elem.firstChild;
+            while(child) {
+                if(child.nodeType == 3) {
+                    source += child.textContent;
+                }
+                child = child.nextSibling;
+            }
+            return source;
+        },
+        load_shader: function(shader_type, shader_code) {
+            var shader = this.gl.createShader(shader_type);
+            this.gl.shaderSource(shader, shader_code);
+            this.gl.compileShader(shader);
+
+            if(!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+                console.log(this.gl.getShaderInfoLog(shader));
+            }
+
+            return shader;
+        },
+        draw: function() {
+            var ratioUp = 2.0*Math.tan(cam_fov*DEG2RAD/2.0);
+            var ratioRight = ratioUp*(this.canvas.width / this.canvas.height);
+            var camDirX = Math.sin(cam_pitch*DEG2RAD)*Math.sin(cam_heading*DEG2RAD);
+            var camDirY = Math.cos(cam_pitch*DEG2RAD);
+            var camDirZ = Math.sin(cam_pitch*DEG2RAD)*Math.cos(cam_heading*DEG2RAD);
+            var camUpX = ratioUp*Math.sin((cam_pitch-90.0)*DEG2RAD)*Math.sin(cam_heading*DEG2RAD);
+            var camUpY = ratioUp*Math.cos((cam_pitch-90.0)*DEG2RAD);
+            var camUpZ = ratioUp*Math.sin((cam_pitch-90.0)*DEG2RAD)*Math.cos(cam_heading*DEG2RAD);
+            var camRightX = ratioRight*Math.sin((cam_heading-90.0)*DEG2RAD);
+            var camRightY = 0.0;
+            var camRightZ = ratioRight*Math.cos((cam_heading-90.0)*DEG2RAD);
+            var camPlaneOriginX = camDirX + 0.5*camUpX - 0.5*camRightX;
+            var camPlaneOriginY = camDirY + 0.5*camUpY - 0.5*camRightY;
+            var camPlaneOriginZ = camDirZ + 0.5*camUpZ - 0.5*camRightZ;
+
+            this.gl.uniform2f(this.attribs.viewport_size,
+                    this.canvas.width, this.canvas.height);
+            this.gl.uniform3f(this.attribs.cam_up, camUpX, camUpY, camUpZ);
+            this.gl.uniform3f(this.attribs.cam_right, camRightX, camRightY, camRightZ);
+            this.gl.uniform3f(this.attribs.cam_plane, camPlaneOriginX, camPlaneOriginY, camPlaneOriginZ);
+
+            this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+            this.gl.clearColor(0.5, 0., 0., 1.);
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+
+            this.gl.vertexAttrib2f(this.cam_loc, this.rx, this.ry);
+            this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+        }
+    });
+
 function drawRoundedRect(ctx, ox, oy, w, h, radius){
   ctx.beginPath();
   ctx.moveTo(ox + radius,oy);
@@ -377,6 +522,8 @@ function drawRoundedRect(ctx, ox, oy, w, h, radius){
 }
 
 function draw(){
+  renderer.draw();
+  return;
   if(pano_canvas != null && pano_canvas.getContext != null){
     var ctx = pano_canvas.getContext("2d");
 

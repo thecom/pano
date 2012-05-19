@@ -4,8 +4,49 @@
     <script type='text/javascript' src='pano.js'></script>
     <script type='text/javascript' src='upload.js'></script>
     <link rel="stylesheet" type="text/css" href="style.css" />
+        <script id="vertex_shader" type="x-shader/x-vertex">
+attribute vec3 vertex;
+
+void main() {
+    gl_Position = vec4(vertex, 1.0);
+}
+        </script>
+        <script id="fragment_shader" type="x-shader/x-fragment">
+#define PI 3.14159265358979323846
+precision highp float;
+
+uniform vec2 texture_size;
+uniform float panorama_height;
+uniform vec2 viewport_size;
+uniform vec3 cam_up;
+uniform vec3 cam_right;
+uniform vec3 cam_plane;
+
+uniform sampler2D texture_img;
+
+float height_scale = panorama_height / texture_size.y;
+
+float theta_fac = texture_size.y / PI;
+float phi_fac = texture_size.x * height_scale / PI;
+
+void main() {
+    vec2 f = vec2(gl_FragCoord) / viewport_size;
+    vec3 ray = vec3(
+        cam_plane.x + f.x * cam_right.x - f.y * cam_up.x,
+        cam_plane.y + f.x * cam_right.y - f.y * cam_up.y,
+        cam_plane.z + f.x * cam_right.z - f.y * cam_up.z);
+
+    float ray_norm = 1. / sqrt(ray.x * ray.x + ray.y * ray.y + ray.z * ray.z);
+    float theta = acos(ray.y * ray_norm);
+    float phi = atan(ray.z, ray.x) + PI;
+    vec2 coord = vec2(phi * phi_fac, theta * theta_fac) / texture_size;
+    coord.y = 
+    coord.y = 0.5 + height_scale / 2. - coord.y * height_scale;
+    gl_FragColor = vec4(texture2D(texture_img, coord));
+}
+        </script>
   </head>
-  <body onload="init_pano('canvas', 'images/panoramas/helvellyn_striding_edge.jpg'); init_fileupload('image_file');">
+  <body onload="init_pano('canvas', 'pano.jpg'); init_fileupload('image_file');">
     <div id="slideout">
       <h1>Menu</h1>
       <div id="slideout_inner">
