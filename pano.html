@@ -40,7 +40,6 @@ void main() {
     float theta = acos(ray.y * ray_norm);
     float phi = atan(ray.z, ray.x) + PI;
     vec2 coord = vec2(phi * phi_fac, theta * theta_fac) / texture_size;
-    coord.y = 
     coord.y = 0.5 + height_scale / 2. - coord.y * height_scale;
     gl_FragColor = vec4(texture2D(texture_img, coord));
 }

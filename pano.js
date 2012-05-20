@@ -502,7 +502,6 @@ WebGLRenderer = Class(Object,
             this.gl.clearColor(0.5, 0., 0., 1.);
             this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
 
-            this.gl.vertexAttrib2f(this.cam_loc, this.rx, this.ry);
             this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
         }
     });
