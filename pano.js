@@ -97,7 +97,7 @@ function imageLoaded(){
   var buffer_ctx = buffer.getContext("2d");
 
   //set buffer size
-  var tex_resolution = 2048;
+  var tex_resolution = 4096;
   buffer.width = tex_resolution;
   buffer.height = tex_resolution;
 
@@ -122,8 +122,8 @@ function mouseDown(e){
 
 function mouseMove(e){
   if(mouseIsDown == true){
-    cam_heading -= (e.clientX-mouseDownPosLastX);
-    cam_pitch += 0.5*(e.clientY-mouseDownPosLastY);
+    cam_heading += 0.25*(e.clientX-mouseDownPosLastX);
+    cam_pitch += 0.25*(e.clientY-mouseDownPosLastY);
     mouseDownPosLastX = e.clientX;
     mouseDownPosLastY = e.clientY;
     draw();
@@ -477,7 +477,7 @@ WebGLRenderer = Class(Object,
             return shader;
         },
         draw: function() {
-            var ratioUp = 2.0*Math.tan(cam_fov*DEG2RAD/2.0);
+            var ratioUp = Math.tan(cam_fov*DEG2RAD/2.0);
             var ratioRight = ratioUp*(this.canvas.width / this.canvas.height);
             var camDirX = Math.sin(cam_pitch*DEG2RAD)*Math.sin(cam_heading*DEG2RAD);
             var camDirY = Math.cos(cam_pitch*DEG2RAD);
