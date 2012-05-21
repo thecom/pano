@@ -196,7 +196,9 @@ function drawLine(pixels, scanwidth, xofs, x0, y0, x1, y1) {
 WebGLRenderer = Class(Object,
     function WebGLRenderer(canvas) {
         this.canvas = canvas;
-        this.gl = this.canvas.getContext('webkit-3d');
+        this.gl = this.canvas.getContext('webkit-3d') ||
+                this.canvas.getContext('webgl') ||
+                this.canvas.getContext('experimental-webgl');
     },
     {
         init: function(img) {
